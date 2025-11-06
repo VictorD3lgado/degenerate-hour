@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, FlatList, SafeAreaView, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
+import {
+  StyleSheet,
+  Text,
+  View,
+  FlatList,
+  SafeAreaView,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+} from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://wuhlnkvsoskdgpymdxer.supabase.co';
@@ -7,19 +16,15 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-const { width } = Dimensions.get('window');
-
 export default function App() {
   const [bets, setBets] = useState([]);
-  const [activeTab, setActiveTab] = useState('trending');
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('Trending');
 
   useEffect(() => {
     fetchBets();
   }, []);
 
   async function fetchBets() {
-    setLoading(true);
     let { data, error } = await supabase
       .from('bets')
       .select('*')
@@ -28,169 +33,180 @@ export default function App() {
     if (data) {
       setBets(data);
     }
-    setLoading(false);
   }
 
   const getRiskColor = (level) => {
     if (level >= 4) return '#FF1744';
-    if (level === 3) return '#FF9800';
+    if (level >= 3) return '#FF9800';
     return '#FFC400';
   };
 
   const getOddsColor = (odds) => {
-    return odds && odds.startsWith('+') ? '#00E676' : '#FF5252';
+    if (!odds) return '#999999';
+    return odds.includes('+') ? '#00E676' : '#FF5252';
   };
 
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <View style={styles.profileCircle}>
+        <Text style={styles.profileText}>D</Text>
+      </View>
+      <View style={styles.searchBar}>
+        <Text style={styles.searchIcon}>🔍</Text>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search"
+          placeholderTextColor="#666666"
+        />
+      </View>
+      <View style={styles.notificationCircle}>
+        <Text style={styles.notificationIcon}>🔔</Text>
+      </View>
+    </View>
+  );
+
+  const renderPremiumBanner = () => (
+    <View style={styles.premiumBanner}>
+      <View style={styles.premiumContent}>
+        <Text style={styles.premiumTitle}>Degenerate Hour Premium</Text>
+        <Text style={styles.premiumSubtitle}>Membership</Text>
+        <Text style={styles.premiumDescription}>
+          Unlocking the secrets to successful betting
+        </Text>
+      </View>
+      <TouchableOpacity style={styles.premiumButton}>
+        <Text style={styles.premiumButtonText}>Get Now</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   const renderBetCard = ({ item }) => (
-    <TouchableOpacity style={styles.betCard} activeOpacity={0.8}>
-      <View style={styles.cardHeader}>
-        <View style={styles.iconCircle}>
-          <Text style={styles.iconText}>🔥</Text>
+    <View style={styles.betCard}>
+      <View style={styles.betHeader}>
+        <View style={styles.betIconCircle}>
+          <Text style={styles.betIcon}>🔥</Text>
         </View>
-        <View style={styles.cardTitleContainer}>
-          <Text style={styles.betTitle}>{item.title}</Text>
+        <View style={styles.betHeaderInfo}>
+          <Text style={styles.betTitle}>{item.title || 'Untitled Bet'}</Text>
           <Text style={styles.betType}>{item.type || 'Parlay'}</Text>
         </View>
-        <View style={styles.oddsContainer}>
-          <Text style={[styles.oddsText, { color: getOddsColor(item.odds) }]}>
-            {item.odds || '+1000'}
+        <View style={styles.betOddsContainer}>
+          <Text style={[styles.betOdds, { color: getOddsColor(item.odds) }]}>
+            {item.odds || '+0'}
           </Text>
         </View>
       </View>
 
-      <Text style={styles.betDescription}>{item.description}</Text>
+      <Text style={styles.betDescription} numberOfLines={2}>
+        {item.description || 'No description'}
+      </Text>
 
-      <View style={styles.cardFooter}>
-        <View style={styles.riskIndicator}>
-          <Text style={styles.riskLabel}>Risk</Text>
-          <View style={styles.riskDots}>
-            {[1, 2, 3, 4, 5].map((dot) => (
-              <View
-                key={dot}
-                style={[
-                  styles.riskDot,
-                  {
-                    backgroundColor:
-                      dot <= (item.risk_level || 3)
-                        ? getRiskColor(item.risk_level || 3)
-                        : '#2A2A2A',
-                  },
-                ]}
-              />
-            ))}
-          </View>
+      <View style={styles.betFooter}>
+        <View style={styles.riskContainer}>
+          <Text style={styles.riskLabel}>Risk </Text>
+          {[1, 2, 3, 4, 5].map((level) => (
+            <View
+              key={level}
+              style={[
+                styles.riskDot,
+                {
+                  backgroundColor:
+                    level <= (item.risk_level || 1)
+                      ? getRiskColor(item.risk_level)
+                      : '#2A2A2A',
+                },
+              ]}
+            />
+          ))}
         </View>
-        <Text style={styles.timestamp}>
-          {new Date(item.timestamp).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
+        <Text style={styles.betTime}>
+          {item.timestamp
+            ? new Date(item.timestamp).toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            : 'Now'}
         </Text>
       </View>
-    </TouchableOpacity>
+    </View>
   );
+
+  const renderContent = () => {
+    if (activeTab === 'Trending') {
+      return (
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Trending</Text>
+            <TouchableOpacity>
+              <Text style={styles.viewAll}>View all →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {renderPremiumBanner()}
+
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>HOT Parlays</Text>
+            <TouchableOpacity>
+              <Text style={styles.viewAll}>View all →</Text>
+            </TouchableOpacity>
+          </View>
+
+          {bets.length > 0 ? (
+            bets.map((item) => (
+              <View key={item.id}>{renderBetCard({ item })}</View>
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyIcon}>🎲</Text>
+              <Text style={styles.emptyText}>No hot parlays yet!</Text>
+              <Text style={styles.emptySubtext}>
+                Be the first degen to post a wild bet
+              </Text>
+            </View>
+          )}
+        </ScrollView>
+      );
+    }
+
+    return (
+      <View style={styles.centerContent}>
+        <Text style={styles.comingSoon}>{activeTab}</Text>
+        <Text style={styles.comingSoonSub}>Coming soon...</Text>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.profileCircle}>
-          <Text style={styles.profileText}>D</Text>
-        </View>
-        <View style={styles.searchContainer}>
-          <Text style={styles.searchIcon}>🔍</Text>
-          <Text style={styles.searchText}>Search</Text>
-        </View>
-        <TouchableOpacity style={styles.notificationCircle}>
-          <Text style={styles.notificationText}>🔔</Text>
-        </TouchableOpacity>
-      </View>
+      {renderHeader()}
+      {renderContent()}
 
-      {/* Section Title */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Trending</Text>
-        <TouchableOpacity>
-          <Text style={styles.viewAllText}>View all →</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Bet List */}
-      <FlatList
-        data={bets}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderBetCard}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>🎲</Text>
-            <Text style={styles.emptySubtext}>No wild bets yet!</Text>
-            <Text style={styles.emptyHint}>Be the first degen</Text>
-          </View>
-        }
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-      />
-
-      {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('trending')}
-        >
-          <Text style={styles.navIcon}>📈</Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'trending' && styles.navLabelActive,
-            ]}
+        {['Trending', 'Bets', 'Portfolio', 'Settings'].map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            style={styles.navItem}
+            onPress={() => setActiveTab(tab)}
           >
-            Trending
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('market')}
-        >
-          <Text style={styles.navIcon}>💰</Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'market' && styles.navLabelActive,
-            ]}
-          >
-            Market
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('portfolio')}
-        >
-          <Text style={styles.navIcon}>📊</Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'portfolio' && styles.navLabelActive,
-            ]}
-          >
-            Portfolio
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => setActiveTab('settings')}
-        >
-          <Text style={styles.navIcon}>⚙️</Text>
-          <Text
-            style={[
-              styles.navLabel,
-              activeTab === 'settings' && styles.navLabelActive,
-            ]}
-          >
-            Settings
-          </Text>
-        </TouchableOpacity>
+            <Text style={styles.navIcon}>
+              {tab === 'Trending'
+                ? '📈'
+                : tab === 'Bets'
+                ? '💰'
+                : tab === 'Portfolio'
+                ? '📊'
+                : '⚙️'}
+            </Text>
+            <Text
+              style={[
+                styles.navLabel,
+                activeTab === tab && styles.navLabelActive,
+              ]}
+            >
+              {tab}
+            </Text>
+          </TouchableOpacity>
+        ))}
       </View>
     </SafeAreaView>
   );
@@ -209,9 +225,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   profileCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#1E1E1E',
     justifyContent: 'center',
     alignItems: 'center',
@@ -221,175 +237,217 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
-  searchContainer: {
+  searchBar: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1A1A',
-    borderRadius: 22,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 12,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    height: 44,
     gap: 8,
   },
   searchIcon: {
     fontSize: 16,
   },
-  searchText: {
-    color: '#666666',
+  searchInput: {
+    flex: 1,
+    color: '#FFFFFF',
     fontSize: 15,
   },
   notificationCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#1E1E1E',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  notificationText: {
-    fontSize: 18,
+  notificationIcon: {
+    fontSize: 20,
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 16,
+    marginTop: 24,
+    marginBottom: 16,
   },
   sectionTitle: {
     color: '#FFFFFF',
     fontSize: 24,
     fontWeight: 'bold',
   },
-  viewAllText: {
-    color: '#666666',
+  viewAll: {
+    color: '#999999',
     fontSize: 14,
   },
-  listContent: {
+  premiumBanner: {
+    backgroundColor: '#8B4513',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  premiumContent: {
+    flex: 1,
+  },
+  premiumTitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  premiumSubtitle: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  premiumDescription: {
+    color: '#FFCCCC',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  premiumButton: {
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 20,
-    paddingBottom: 100,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  premiumButtonText: {
+    color: '#8B4513',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
   betCard: {
     backgroundColor: '#161616',
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 14,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#222222',
+    borderColor: '#2A2A2A',
   },
-  cardHeader: {
+  betHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
   },
-  iconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#242424',
+  betIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#2A2A2A',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  iconText: {
+  betIcon: {
     fontSize: 20,
   },
-  cardTitleContainer: {
+  betHeaderInfo: {
     flex: 1,
   },
   betTitle: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     marginBottom: 2,
   },
   betType: {
-    color: '#666666',
+    color: '#999999',
     fontSize: 13,
-    textTransform: 'capitalize',
   },
-  oddsContainer: {
-    backgroundColor: '#1E1E1E',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+  betOddsContainer: {
+    alignItems: 'flex-end',
   },
-  oddsText: {
-    fontSize: 15,
+  betOdds: {
+    fontSize: 16,
     fontWeight: 'bold',
   },
   betDescription: {
-    color: '#999999',
+    color: '#CCCCCC',
     fontSize: 14,
     lineHeight: 20,
-    marginBottom: 14,
+    marginBottom: 12,
   },
-  cardFooter: {
+  betFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  riskIndicator: {
+  riskContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
   riskLabel: {
-    color: '#666666',
+    color: '#999999',
     fontSize: 12,
-  },
-  riskDots: {
-    flexDirection: 'row',
-    gap: 4,
+    marginRight: 6,
   },
   riskDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
+    marginRight: 4,
   },
-  timestamp: {
+  betTime: {
     color: '#666666',
     fontSize: 12,
   },
-  emptyContainer: {
+  emptyState: {
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
+    paddingVertical: 60,
+  },
+  emptyIcon: {
+    fontSize: 64,
+    marginBottom: 16,
   },
   emptyText: {
-    fontSize: 48,
-    marginBottom: 12,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
   },
   emptySubtext: {
-    color: '#666666',
-    fontSize: 18,
-    marginBottom: 4,
-  },
-  emptyHint: {
-    color: '#444444',
+    color: '#999999',
     fontSize: 14,
   },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  comingSoon: {
+    color: '#FFFFFF',
+    fontSize: 32,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
+  comingSoonSub: {
+    color: '#999999',
+    fontSize: 16,
+  },
   bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
-    backgroundColor: '#0F0F0F',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    backgroundColor: '#0A0A0A',
     borderTopWidth: 1,
-    borderTopColor: '#1A1A1A',
+    borderTopColor: '#2A2A2A',
+    paddingBottom: 8,
   },
   navItem: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
+    paddingTop: 12,
   },
   navIcon: {
-    fontSize: 20,
+    fontSize: 24,
+    marginBottom: 4,
   },
   navLabel: {
     color: '#666666',
