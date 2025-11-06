@@ -6,8 +6,10 @@ import {
   FlatList,
   SafeAreaView,
   TouchableOpacity,
-  ScrollView,
   TextInput,
+  ScrollView,
+  Modal,
+  StatusBar,
 } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
@@ -17,23 +19,91 @@ const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export default function App() {
+  const [activeTab, setActiveTab] = useState('trending');
   const [bets, setBets] = useState([]);
-  const [activeTab, setActiveTab] = useState('Trending');
+  const [loading, setLoading] = useState(true);
+  const [showAddBet, setShowAddBet] = useState(false);
+  const [newBet, setNewBet] = useState({
+    title: '',
+    description: '',
+    type: 'parlay',
+    odds: '',
+    risk_level: 3,
+  });
 
   useEffect(() => {
     fetchBets();
+    // Setup realtime subscription
+    const subscription = supabase
+      .channel('bets_channel')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'bets' },
+        (payload) => {
+          console.log('Change received!', payload);
+          fetchBets();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function fetchBets() {
+    setLoading(true);
     let { data, error } = await supabase
       .from('bets')
       .select('*')
       .order('timestamp', { ascending: false });
 
-    if (data) {
+    if (!error && data) {
       setBets(data);
     }
+    setLoading(false);
   }
+
+  async function submitBet() {
+    if (!newBet.title || !newBet.odds) {
+      alert('Please fill in title and odds');
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('bets')
+      .insert([{
+        title: newBet.title,
+        description: newBet.description,
+        type: newBet.type,
+        odds: newBet.odds,
+        risk_level: newBet.risk_level,
+        created_by: 'mobile_user',
+      }]);
+
+    if (!error) {
+      setShowAddBet(false);
+      setNewBet({
+        title: '',
+        description: '',
+        type: 'parlay',
+        odds: '',
+        risk_level: 3,
+      });
+      fetchBets();
+    } else {
+      alert('Error submitting bet: ' + error.message);
+    }
+  }
+
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    const hours = date.getHours();
+    const minutes = date.getMinutes().toString().padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = hours % 12 || 12;
+    return `${formattedHours}:${minutes} ${ampm}`;
+  };
 
   const getRiskColor = (level) => {
     if (level >= 4) return '#FF1744';
@@ -42,171 +112,340 @@ export default function App() {
   };
 
   const getOddsColor = (odds) => {
-    if (!odds) return '#999999';
-    return odds.includes('+') ? '#00E676' : '#FF5252';
+    if (!odds) return '#999';
+    return odds.toString().includes('+') ? '#00E676' : '#FF5252';
   };
 
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <View style={styles.profileCircle}>
-        <Text style={styles.profileText}>D</Text>
-      </View>
-      <View style={styles.searchBar}>
-        <Text style={styles.searchIcon}>🔍</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search"
-          placeholderTextColor="#666666"
-        />
-      </View>
-      <View style={styles.notificationCircle}>
-        <Text style={styles.notificationIcon}>🔔</Text>
-      </View>
-    </View>
-  );
-
-  const renderPremiumBanner = () => (
-    <View style={styles.premiumBanner}>
-      <View style={styles.premiumContent}>
-        <Text style={styles.premiumTitle}>Degenerate Hour Premium</Text>
-        <Text style={styles.premiumSubtitle}>Membership</Text>
-        <Text style={styles.premiumDescription}>
-          Unlocking the secrets to successful betting
-        </Text>
-      </View>
-      <TouchableOpacity style={styles.premiumButton}>
-        <Text style={styles.premiumButtonText}>Get Now</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderBetCard = ({ item }) => (
-    <View style={styles.betCard}>
-      <View style={styles.betHeader}>
-        <View style={styles.betIconCircle}>
-          <Text style={styles.betIcon}>🔥</Text>
+  const renderTrendingTab = () => (
+    <ScrollView style={styles.tabContent} showsVerticalScrollIndicator={false}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.profileCircle}>
+          <Text style={styles.profileInitial}>D</Text>
         </View>
-        <View style={styles.betHeaderInfo}>
-          <Text style={styles.betTitle}>{item.title || 'Untitled Bet'}</Text>
-          <Text style={styles.betType}>{item.type || 'Parlay'}</Text>
+        <View style={styles.searchBar}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <Text style={styles.searchPlaceholder}>Search</Text>
         </View>
-        <View style={styles.betOddsContainer}>
-          <Text style={[styles.betOdds, { color: getOddsColor(item.odds) }]}>
-            {item.odds || '+0'}
+        <View style={styles.bellIcon}>
+          <Text style={styles.bellEmoji}>🔔</Text>
+        </View>
+      </View>
+
+      {/* Trending Section Header */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>Trending</Text>
+        <TouchableOpacity>
+          <Text style={styles.viewAll}>View all →</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Premium Banner */}
+      <View style={styles.premiumBanner}>
+        <View style={styles.premiumContent}>
+          <Text style={styles.premiumTitle}>Degenerate Hour Premium</Text>
+          <Text style={styles.premiumSubtitle}>Membership</Text>
+          <Text style={styles.premiumDescription}>
+            Unlocking the secrets to successful betting
           </Text>
         </View>
+        <TouchableOpacity style={styles.premiumButton}>
+          <Text style={styles.premiumButtonText}>Get Now</Text>
+        </TouchableOpacity>
       </View>
 
-      <Text style={styles.betDescription} numberOfLines={2}>
-        {item.description || 'No description'}
-      </Text>
+      {/* HOT Parlays Section */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>HOT Parlays</Text>
+        <TouchableOpacity>
+          <Text style={styles.viewAll}>View all →</Text>
+        </TouchableOpacity>
+      </View>
 
-      <View style={styles.betFooter}>
-        <View style={styles.riskContainer}>
-          <Text style={styles.riskLabel}>Risk </Text>
-          {[1, 2, 3, 4, 5].map((level) => (
-            <View
-              key={level}
-              style={[
-                styles.riskDot,
-                {
-                  backgroundColor:
-                    level <= (item.risk_level || 1)
-                      ? getRiskColor(item.risk_level)
-                      : '#2A2A2A',
-                },
-              ]}
-            />
-          ))}
+      {/* Bets List */}
+      {loading ? (
+        <Text style={styles.loadingText}>Loading hot parlays...</Text>
+      ) : bets.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyEmoji}>🎲</Text>
+          <Text style={styles.emptyText}>No hot parlays yet!</Text>
+          <Text style={styles.emptySubtext}>Be the first degen to post</Text>
         </View>
-        <Text style={styles.betTime}>
-          {item.timestamp
-            ? new Date(item.timestamp).toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })
-            : 'Now'}
-        </Text>
-      </View>
+      ) : (
+        bets.map((bet, index) => (
+          <TouchableOpacity key={bet.id || index} style={styles.betCard}>
+            <View style={styles.betHeader}>
+              <View style={styles.betIconContainer}>
+                <Text style={styles.betIcon}>🔥</Text>
+              </View>
+              <View style={styles.betInfo}>
+                <Text style={styles.betTitle}>{bet.title}</Text>
+                <Text style={styles.betType}>{bet.type || 'Parlay'}</Text>
+              </View>
+              <View style={styles.betOddsContainer}>
+                <Text style={[styles.betOdds, { color: getOddsColor(bet.odds) }]}>
+                  {bet.odds}
+                </Text>
+              </View>
+            </View>
+
+            {bet.description && (
+              <Text style={styles.betDescription} numberOfLines={2}>
+                {bet.description}
+              </Text>
+            )}
+
+            <View style={styles.betFooter}>
+              <View style={styles.riskContainer}>
+                <Text style={styles.riskLabel}>Risk</Text>
+                {[1, 2, 3, 4, 5].map((dot) => (
+                  <View
+                    key={dot}
+                    style={[
+                      styles.riskDot,
+                      {
+                        backgroundColor:
+                          dot <= (bet.risk_level || 3)
+                            ? getRiskColor(bet.risk_level || 3)
+                            : '#333',
+                      },
+                    ]}
+                  />
+                ))}
+              </View>
+              <Text style={styles.betTime}>{formatTime(bet.timestamp)}</Text>
+            </View>
+          </TouchableOpacity>
+        ))
+      )}
+
+      <View style={{ height: 100 }} />
+    </ScrollView>
+  );
+
+  const renderBetsTab = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.tabTitle}>Submit Your Bet</Text>
+
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <View style={styles.formContainer}>
+          <Text style={styles.label}>Bet Title *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g., 5-leg midnight parlay"
+            placeholderTextColor="#666"
+            value={newBet.title}
+            onChangeText={(text) => setNewBet({ ...newBet, title: text })}
+          />
+
+          <Text style={styles.label}>Description</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            placeholder="Describe your bet..."
+            placeholderTextColor="#666"
+            multiline
+            numberOfLines={4}
+            value={newBet.description}
+            onChangeText={(text) => setNewBet({ ...newBet, description: text })}
+          />
+
+          <Text style={styles.label}>Bet Type</Text>
+          <View style={styles.typeContainer}>
+            {['parlay', 'prop combo', 'fade', 'straight'].map((type) => (
+              <TouchableOpacity
+                key={type}
+                style={[
+                  styles.typeButton,
+                  newBet.type === type && styles.typeButtonActive,
+                ]}
+                onPress={() => setNewBet({ ...newBet, type })}
+              >
+                <Text
+                  style={[
+                    styles.typeButtonText,
+                    newBet.type === type && styles.typeButtonTextActive,
+                  ]}
+                >
+                  {type}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.label}>Odds *</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g., +2500 or -150"
+            placeholderTextColor="#666"
+            value={newBet.odds}
+            onChangeText={(text) => setNewBet({ ...newBet, odds: text })}
+          />
+
+          <Text style={styles.label}>Risk Level: {newBet.risk_level}/5</Text>
+          <View style={styles.riskSliderContainer}>
+            {[1, 2, 3, 4, 5].map((level) => (
+              <TouchableOpacity
+                key={level}
+                style={[
+                  styles.riskSliderDot,
+                  {
+                    backgroundColor:
+                      level <= newBet.risk_level ? getRiskColor(newBet.risk_level) : '#333',
+                  },
+                ]}
+                onPress={() => setNewBet({ ...newBet, risk_level: level })}
+              />
+            ))}
+          </View>
+
+          <TouchableOpacity style={styles.submitButton} onPress={submitBet}>
+            <Text style={styles.submitButtonText}>🔥 Post Bet</Text>
+          </TouchableOpacity>
+        </View>
+        <View style={{ height: 100 }} />
+      </ScrollView>
     </View>
   );
 
-  const renderContent = () => {
-    if (activeTab === 'Trending') {
-      return (
-        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Trending</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewAll}>View all →</Text>
-            </TouchableOpacity>
-          </View>
-
-          {renderPremiumBanner()}
-
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>HOT Parlays</Text>
-            <TouchableOpacity>
-              <Text style={styles.viewAll}>View all →</Text>
-            </TouchableOpacity>
-          </View>
-
-          {bets.length > 0 ? (
-            bets.map((item) => (
-              <View key={item.id}>{renderBetCard({ item })}</View>
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🎲</Text>
-              <Text style={styles.emptyText}>No hot parlays yet!</Text>
-              <Text style={styles.emptySubtext}>
-                Be the first degen to post a wild bet
-              </Text>
-            </View>
-          )}
-        </ScrollView>
-      );
-    }
+  const renderPortfolioTab = () => {
+    const totalBets = bets.length;
+    const avgRisk = bets.length > 0 
+      ? (bets.reduce((sum, bet) => sum + (bet.risk_level || 3), 0) / bets.length).toFixed(1)
+      : 0;
 
     return (
-      <View style={styles.centerContent}>
-        <Text style={styles.comingSoon}>{activeTab}</Text>
-        <Text style={styles.comingSoonSub}>Coming soon...</Text>
+      <View style={styles.tabContent}>
+        <Text style={styles.tabTitle}>Your Portfolio</Text>
+
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={styles.statsContainer}>
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{totalBets}</Text>
+              <Text style={styles.statLabel}>Total Bets</Text>
+            </View>
+
+            <View style={styles.statCard}>
+              <Text style={styles.statValue}>{avgRisk}</Text>
+              <Text style={styles.statLabel}>Avg Risk</Text>
+            </View>
+          </View>
+
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
+
+          {bets.slice(0, 5).map((bet, index) => (
+            <View key={bet.id || index} style={styles.activityCard}>
+              <Text style={styles.activityTitle}>{bet.title}</Text>
+              <Text style={styles.activityOdds} style={{ color: getOddsColor(bet.odds) }}>
+                {bet.odds}
+              </Text>
+            </View>
+          ))}
+          <View style={{ height: 100 }} />
+        </ScrollView>
       </View>
     );
   };
 
+  const renderSettingsTab = () => (
+    <View style={styles.tabContent}>
+      <Text style={styles.tabTitle}>Settings</Text>
+
+      <ScrollView showsVerticalScrollIndicator={false}>
+        <TouchableOpacity style={styles.settingItem}>
+          <Text style={styles.settingText}>👤 Profile</Text>
+          <Text style={styles.settingArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.settingItem}>
+          <Text style={styles.settingText}>🔔 Notifications</Text>
+          <Text style={styles.settingArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.settingItem}>
+          <Text style={styles.settingText}>🎨 Theme</Text>
+          <Text style={styles.settingArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.settingItem}>
+          <Text style={styles.settingText}>📊 Stats</Text>
+          <Text style={styles.settingArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.settingItem}>
+          <Text style={styles.settingText}>ℹ️ About</Text>
+          <Text style={styles.settingArrow}>→</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.settingItem, styles.logoutItem]}>
+          <Text style={styles.logoutText}>🚪 Sign Out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </View>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
-      {renderHeader()}
-      {renderContent()}
+      <StatusBar barStyle="light-content" backgroundColor="#0A0A0A" />
 
+      {/* Render active tab content */}
+      {activeTab === 'trending' && renderTrendingTab()}
+      {activeTab === 'bets' && renderBetsTab()}
+      {activeTab === 'portfolio' && renderPortfolioTab()}
+      {activeTab === 'settings' && renderSettingsTab()}
+
+      {/* Bottom Navigation */}
       <View style={styles.bottomNav}>
-        {['Trending', 'Bets', 'Portfolio', 'Settings'].map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={styles.navItem}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={styles.navIcon}>
-              {tab === 'Trending'
-                ? '📈'
-                : tab === 'Bets'
-                ? '💰'
-                : tab === 'Portfolio'
-                ? '📊'
-                : '⚙️'}
-            </Text>
-            <Text
-              style={[
-                styles.navLabel,
-                activeTab === tab && styles.navLabelActive,
-              ]}
-            >
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => setActiveTab('trending')}
+        >
+          <Text style={styles.navIcon}>📈</Text>
+          <Text style={[
+            styles.navText,
+            activeTab === 'trending' && styles.navTextActive
+          ]}>
+            Trending
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => setActiveTab('bets')}
+        >
+          <Text style={styles.navIcon}>💰</Text>
+          <Text style={[
+            styles.navText,
+            activeTab === 'bets' && styles.navTextActive
+          ]}>
+            Bets
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => setActiveTab('portfolio')}
+        >
+          <Text style={styles.navIcon}>📊</Text>
+          <Text style={[
+            styles.navText,
+            activeTab === 'portfolio' && styles.navTextActive
+          ]}>
+            Portfolio
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => setActiveTab('settings')}
+        >
+          <Text style={styles.navIcon}>⚙️</Text>
+          <Text style={[
+            styles.navText,
+            activeTab === 'settings' && styles.navTextActive
+          ]}>
+            Settings
+          </Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -217,12 +456,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0A0A0A',
   },
+  tabContent: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    gap: 12,
+    paddingTop: 12,
+    paddingBottom: 16,
   },
   profileCircle: {
     width: 44,
@@ -231,11 +473,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E1E1E',
     justifyContent: 'center',
     alignItems: 'center',
+    marginRight: 12,
   },
-  profileText: {
-    color: '#FFFFFF',
+  profileInitial: {
+    color: '#FFF',
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
   },
   searchBar: {
     flex: 1,
@@ -243,19 +486,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#1E1E1E',
     borderRadius: 12,
-    paddingHorizontal: 16,
-    height: 44,
-    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginRight: 12,
   },
   searchIcon: {
     fontSize: 16,
+    marginRight: 8,
   },
-  searchInput: {
-    flex: 1,
-    color: '#FFFFFF',
+  searchPlaceholder: {
+    color: '#666',
     fontSize: 15,
   },
-  notificationCircle: {
+  bellIcon: {
     width: 44,
     height: 44,
     borderRadius: 22,
@@ -263,27 +506,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  notificationIcon: {
+  bellEmoji: {
     fontSize: 20,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 20,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 16,
+    marginTop: 20,
+    marginBottom: 12,
   },
   sectionTitle: {
-    color: '#FFFFFF',
-    fontSize: 24,
-    fontWeight: 'bold',
+    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '700',
   },
   viewAll: {
-    color: '#999999',
+    color: '#999',
     fontSize: 14,
   },
   premiumBanner: {
@@ -291,39 +530,36 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     marginBottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
   },
   premiumContent: {
-    flex: 1,
+    marginBottom: 16,
   },
   premiumTitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#FFF',
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   premiumSubtitle: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
     marginBottom: 8,
   },
   premiumDescription: {
-    color: '#FFCCCC',
+    color: '#FFE4C4',
     fontSize: 13,
-    lineHeight: 18,
   },
   premiumButton: {
-    backgroundColor: '#FFFFFF',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
   },
   premiumButtonText: {
     color: '#8B4513',
-    fontWeight: 'bold',
-    fontSize: 14,
+    fontSize: 16,
+    fontWeight: '700',
   },
   betCard: {
     backgroundColor: '#161616',
@@ -331,47 +567,48 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: '#222',
   },
   betHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
   },
-  betIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#2A2A2A',
+  betIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#1E1E1E',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
   betIcon: {
-    fontSize: 20,
+    fontSize: 24,
   },
-  betHeaderInfo: {
+  betInfo: {
     flex: 1,
   },
   betTitle: {
-    color: '#FFFFFF',
+    color: '#FFF',
     fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 2,
+    fontWeight: '600',
+    marginBottom: 4,
   },
   betType: {
-    color: '#999999',
+    color: '#999',
     fontSize: 13,
+    textTransform: 'capitalize',
   },
   betOddsContainer: {
-    alignItems: 'flex-end',
+    marginLeft: 12,
   },
   betOdds: {
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
   },
   betDescription: {
-    color: '#CCCCCC',
+    color: '#999',
     fontSize: 14,
     lineHeight: 20,
     marginBottom: 12,
@@ -386,9 +623,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   riskLabel: {
-    color: '#999999',
+    color: '#999',
     fontSize: 12,
-    marginRight: 6,
+    marginRight: 8,
   },
   riskDot: {
     width: 8,
@@ -397,64 +634,211 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   betTime: {
-    color: '#666666',
+    color: '#666',
     fontSize: 12,
   },
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
   },
-  emptyIcon: {
+  emptyEmoji: {
     fontSize: 64,
     marginBottom: 16,
   },
   emptyText: {
-    color: '#FFFFFF',
+    color: '#FFF',
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '600',
     marginBottom: 8,
   },
   emptySubtext: {
-    color: '#999999',
+    color: '#666',
     fontSize: 14,
   },
-  centerContent: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+  loadingText: {
+    color: '#999',
+    textAlign: 'center',
+    paddingVertical: 40,
+    fontSize: 15,
   },
-  comingSoon: {
-    color: '#FFFFFF',
+  tabTitle: {
+    color: '#FFF',
+    fontSize: 28,
+    fontWeight: '700',
+    marginTop: 20,
+    marginBottom: 24,
+  },
+  formContainer: {
+    paddingBottom: 20,
+  },
+  label: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+    marginTop: 16,
+  },
+  input: {
+    backgroundColor: '#161616',
+    borderRadius: 12,
+    padding: 14,
+    color: '#FFF',
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  typeContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  typeButton: {
+    backgroundColor: '#161616',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  typeButtonActive: {
+    backgroundColor: '#8B4513',
+    borderColor: '#8B4513',
+  },
+  typeButtonText: {
+    color: '#999',
+    fontSize: 14,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  typeButtonTextActive: {
+    color: '#FFF',
+  },
+  riskSliderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+    marginTop: 8,
+  },
+  riskSliderDot: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#333',
+  },
+  submitButton: {
+    backgroundColor: '#8B4513',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 24,
+  },
+  submitButtonText: {
+    color: '#FFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#161616',
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  statValue: {
+    color: '#FFF',
     fontSize: 32,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginBottom: 8,
   },
-  comingSoonSub: {
-    color: '#999999',
+  statLabel: {
+    color: '#999',
+    fontSize: 13,
+  },
+  activityCard: {
+    backgroundColor: '#161616',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  activityTitle: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  activityOdds: {
     fontSize: 16,
+    fontWeight: '700',
+  },
+  settingItem: {
+    backgroundColor: '#161616',
+    borderRadius: 12,
+    padding: 18,
+    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#222',
+  },
+  settingText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  settingArrow: {
+    color: '#666',
+    fontSize: 18,
+  },
+  logoutItem: {
+    marginTop: 16,
+    backgroundColor: '#1E1E1E',
+  },
+  logoutText: {
+    color: '#FF5252',
+    fontSize: 16,
+    fontWeight: '600',
   },
   bottomNav: {
     flexDirection: 'row',
-    backgroundColor: '#0A0A0A',
-    borderTopWidth: 1,
-    borderTopColor: '#2A2A2A',
+    backgroundColor: '#0F0F0F',
+    paddingTop: 12,
     paddingBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#1E1E1E',
   },
   navItem: {
     flex: 1,
     alignItems: 'center',
-    paddingTop: 12,
+    paddingVertical: 4,
   },
   navIcon: {
     fontSize: 24,
     marginBottom: 4,
   },
-  navLabel: {
-    color: '#666666',
+  navText: {
+    color: '#666',
     fontSize: 11,
-    fontWeight: '500',
+    fontWeight: '600',
   },
-  navLabelActive: {
-    color: '#FFFFFF',
+  navTextActive: {
+    color: '#FFF',
   },
 });
