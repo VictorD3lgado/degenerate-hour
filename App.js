@@ -3,7 +3,7 @@ import { StyleSheet, Text, View, FlatList, SafeAreaView } from 'react-native';
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = 'https://wuhlnkvsoskdgpymdxer.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1aGxua3Zzb3NrZGdweW1keGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzNzA2NjUsImV4cCI6MjA3Nzk0NjY2NX0.eyMbKq-7c3pby2dtRO8_dAxCL0nWWA8p27iq0lgULeY';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1aGxua3Zzb3NrZGdweW1keGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIzNzA2NjUsImV4cCI6MjA3Nzk0NjY2NX0.eyMbqk-7c3pby2dtRO8_dAxCL0nWWA8p27iq0lgULeY';
 
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
